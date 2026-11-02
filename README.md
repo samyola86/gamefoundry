@@ -98,6 +98,18 @@ The full check takes several minutes and writes sizable build artifacts. It may 
 
 ## Reuse with different games
 
+### Your creative brief and reference images
+
+**New game → Creative brief and reference images** contains sections for the game description, look and feel, world/level layout, characters, mechanics, audio, constraints and notes. The same brief is available later through the project's **Game brief** button or **Game briefs** tab. Reference images can be assigned to sections and captioned with a character name, location or purpose.
+
+Set a private brief-owner passphrase yourself in the dashboard. Brief saves and image changes require a separate short-lived owner session; ordinary dashboard/build/chat requests have read-only access. The passphrase is salted and scrypt-hashed, not stored in plaintext. Refreshing the page locks editing again; server sessions also expire after 90 minutes or a restart. There is no assistant reset/unlock shortcut. Keep your passphrase private and back up your private app data.
+
+Briefs are stored in `data/briefs/<project-id>/brief.json` with reference images and prior revisions, outside game source and Git. Registering an existing project does not write a brief into its game folder. Removed references are omitted from the new draft but retained on disk for prior revisions. Only PNG, JPEG and WebP images are accepted, up to 24 references, 8 MB each and 20 MB of new image data per save.
+
+Assistants should read `GET /api/brief/<project-id>` and the returned reference-image URLs before working, and must not edit this user-owned material. `AGENTS.md` records this rule. Implementation notes and suggested creative changes belong in separate notes or chat. The dashboard has no automatic file-reading or main-model synchronization; the coding assistant reads the brief when carrying out game work. Qwen chat does not automatically consume it.
+
+The owner passphrase enforces dashboard/API saves. It is not a separate Windows account or an operating-system file permission barrier: a program with the same filesystem permissions could still edit the underlying files. Agent instructions explicitly forbid that. Reference images and briefs remain private runtime data and are never uploaded with repository source.
+
 The new-game dialog offers **Windows** and **Android**. Choosing Android records the selection in `game.json` and the dashboard library, and sets `TargetPlatforms: ["Android"]` in the new Unreal project descriptor. This selects the project's intended platform; it does not install the Android SDK/NDK, set up signing or produce an APK/AAB. Configure the Android tools required by your Unreal version before packaging. Existing full-pipeline checks remain **Windows toolchain tests**, including when associated with an Android game; they do not certify Android builds.
 
 - **New game:** choose its name and parent folder. Creates a new directory with a blank Unreal project, Blender file, VS Code workspace, `game.json`, Assets, Builds and Notes. Existing folders are never overwritten.

@@ -13,6 +13,7 @@ import time
 import traceback
 import urllib.request
 import urllib.error
+from briefs import BriefStore, OwnerRequired, RevisionConflict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 ROOT = Path(__file__).resolve().parent
@@ -20,6 +21,7 @@ from config import app_home, defaults
 DATA = app_home() / 'data'
 DATA.mkdir(parents=True, exist_ok=True)
 TEMPLATES = ROOT / 'templates'
+BRIEFS = BriefStore(DATA / 'briefs')
 TOKEN = secrets.token_urlsafe(32)
 LOCK = threading.RLock()
 BUSY = threading.Lock()
@@ -104,7 +106,10 @@ def chat(body):
     finally:
         CHAT_BUSY.release()
 
-def create_project(body):
+def create_project(body, owner_token=None):
+    initial_brief = body.get('brief')
+    if initial_brief:
+        BRIEFS.authorize(owner_token)
     target_platform = body.get('target', 'Windows')
     if target_platform not in {'Windows', 'Android'}:
         raise ValueError('Choose Windows or Android as the target platform.')
@@ -130,6 +135,13 @@ def create_project(body):
         up.write_text(json.dumps(descriptor, indent=2))
         item = {'id': secrets.token_hex(8), 'name': name, 'folder': str(dest), 'uproject': str(up), 'managed': True, 'created': now(), 'target': target_platform}
         ensure_blend(item)
+        item['creative_brief'] = {'read_url': '/api/brief/' + item['id'], 'owner': 'user', 'assistant_access': 'read-only'}
+        if initial_brief: BRIEFS.save(item['id'], {**initial_brief, 'revision': 0}, owner_token)
+        context = ('# Game creative direction\n\n'
+                   'The creative brief is user-owned and read-only to assistants. Read it and its reference images before game work. Never edit it or obtain its owner passphrase. Keep your implementation notes and proposals in Notes/.\n\n'
+                   f'Read API: http://127.0.0.1:{PORT}/api/brief/{item["id"]}\n\n'
+                   f'Local brief: {BRIEFS.folder(item["id"]) / "brief.json"}\n')
+        (dest / 'AGENTS.md').write_text(context, encoding='utf-8')
         (dest / 'game.json').write_text(json.dumps(item, indent=2))
         (dest / f'{name}.code-workspace').write_text(json.dumps({'folders': [{'path': '.'}], 'settings': {'python.defaultInterpreterPath': settings()['python']}}, indent=2))
         projects = read('projects', [])
@@ -263,9 +275,19 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Content-Length', str(len(content)))
         self.send_header('Cache-Control', 'no-store')
         self.send_header('X-Content-Type-Options', 'nosniff')
-        self.send_header('Content-Security-Policy', "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'")
+        self.send_header('Content-Security-Policy', "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'")
         self.end_headers()
         self.wfile.write(content)
+
+    def image_response(self, path, mime):
+        raw = path.read_bytes()
+        self.send_response(200)
+        self.send_header('Content-Type', mime)
+        self.send_header('Content-Length', str(len(raw)))
+        self.send_header('X-Content-Type-Options', 'nosniff')
+        self.send_header('Cache-Control', 'private, no-store')
+        self.end_headers()
+        self.wfile.write(raw)
 
     def trusted_host(self):
         return self.headers.get('Host') in {f'127.0.0.1:{PORT}', f'localhost:{PORT}'}
@@ -277,6 +299,19 @@ class Handler(BaseHTTPRequestHandler):
             return self.send((ROOT / 'index.html').read_text(encoding='utf-8').replace('__TOKEN__', TOKEN), mime='text/html')
         if self.path == '/api/health':
             return self.send({'app': 'gamefoundry', 'version': '0.2.0', 'instance': str(ROOT)})
+        if self.path == '/api/owner/status':
+            return self.send({'configured': BRIEFS.configured()})
+        if self.path.startswith('/api/brief-image/'):
+            try:
+                _, _, _, pid, image_id = self.path.split('/')
+                if not project(pid): raise ValueError('Project not found.')
+                path, mime = BRIEFS.image(pid, image_id)
+                return self.image_response(path, mime)
+            except (ValueError, OSError): return self.send({'error': 'Reference image not found.'}, 404)
+        if self.path.startswith('/api/brief/'):
+            pid = self.path.rsplit('/', 1)[-1]
+            if not project(pid): return self.send({'error': 'Project not found.'}, 404)
+            return self.send(BRIEFS.read(pid))
         if self.path == '/api/state':
             jobs = read('jobs', [])
             for job in jobs:
@@ -320,14 +355,23 @@ class Handler(BaseHTTPRequestHandler):
             return self.send({'error': 'Request denied'}, 403)
         try:
             length = int(self.headers.get('Content-Length', 0))
-            if not 0 < length <= 20000:
+            limit = 30*1024*1024 if self.path in {'/api/brief/save', '/api/projects/create'} else 20000
+            if not 0 < length <= limit:
                 raise ValueError('Invalid request size.')
             body = json.loads(self.rfile.read(length))
             if self.path == '/api/chat':
                 return self.send(chat(body))
             with LOCK:
+                if self.path == '/api/owner/unlock':
+                    return self.send({'owner_token': BRIEFS.unlock(body.get('password'), setup=body.get('setup') is True, confirm=body.get('confirm'))})
+                if self.path == '/api/owner/lock':
+                    BRIEFS.lock(self.headers.get('X-Brief-Owner'))
+                    return self.send({'locked': True})
+                if self.path == '/api/brief/save':
+                    if not project(body.get('project_id')): raise ValueError('Project not found.')
+                    return self.send(BRIEFS.save(body['project_id'], body, self.headers.get('X-Brief-Owner')))
                 if self.path == '/api/projects/create':
-                    result = create_project(body)
+                    result = create_project(body, self.headers.get('X-Brief-Owner'))
                 elif self.path == '/api/projects/register':
                     result = register_project(body)
                 elif self.path == '/api/settings':
@@ -354,6 +398,10 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     return self.send({'error': 'Not found'}, 404)
             self.send(result)
+        except OwnerRequired as e:
+            self.send({'error': str(e)}, 403)
+        except RevisionConflict as e:
+            self.send({'error': str(e)}, 409)
         except (ValueError, FileExistsError, OSError) as e:
             self.send({'error': str(e)}, 400)
         except Exception:
