@@ -1,0 +1,8 @@
+{
+  "folders": [{"path": "."}],
+  "settings": {"python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe"},
+  "tasks": {"version": "2.0.0", "tasks": [
+    {"label": "Game Foundry: doctor", "type": "process", "command": "${workspaceFolder}/.venv/Scripts/python.exe", "args": ["${workspaceFolder}/doctor.py", "--json"], "problemMatcher": [], "group": {"kind": "test", "isDefault": true}},
+    {"label": "Game Foundry: open dashboard", "type": "process", "command": "${workspaceFolder}/.venv/Scripts/python.exe", "args": ["${workspaceFolder}/launch.py"], "problemMatcher": []}
+  ]}
+}
