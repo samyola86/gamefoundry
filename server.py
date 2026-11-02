@@ -138,7 +138,7 @@ def create_project(body, owner_token=None):
         item['creative_brief'] = {'read_url': '/api/brief/' + item['id'], 'owner': 'user', 'assistant_access': 'read-only'}
         if initial_brief: BRIEFS.save(item['id'], {**initial_brief, 'revision': 0}, owner_token)
         context = ('# Game creative direction\n\n'
-                   'The creative brief is user-owned and read-only to assistants. Read it and its reference images before game work. Never edit it or obtain its owner passphrase. Keep your implementation notes and proposals in Notes/.\n\n'
+                   'The creative brief is user-owned and read-only to assistants. Read it and its reference images before game work. Use core-reference PDFs to fill missing descriptions; explicit written sections take priority. Ask the user about conflicts or unresolved gaps. Never edit it or obtain its owner passphrase. Keep your implementation notes and proposals in Notes/.\n\n'
                    f'Read API: http://127.0.0.1:{PORT}/api/brief/{item["id"]}\n\n'
                    f'Local brief: {BRIEFS.folder(item["id"]) / "brief.json"}\n')
         (dest / 'AGENTS.md').write_text(context, encoding='utf-8')
@@ -301,6 +301,12 @@ class Handler(BaseHTTPRequestHandler):
             return self.send({'app': 'gamefoundry', 'version': '0.2.0', 'instance': str(ROOT)})
         if self.path == '/api/owner/status':
             return self.send({'configured': BRIEFS.configured()})
+        if self.path.startswith('/api/brief-pdf/'):
+            try:
+                _, _, _, pid, document_id = self.path.split('/')
+                if not project(pid): raise ValueError('Project not found.')
+                return self.image_response(BRIEFS.document(pid, document_id), 'application/pdf')
+            except (ValueError, OSError): return self.send({'error': 'Reference PDF not found.'}, 404)
         if self.path.startswith('/api/brief-image/'):
             try:
                 _, _, _, pid, image_id = self.path.split('/')
@@ -355,7 +361,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send({'error': 'Request denied'}, 403)
         try:
             length = int(self.headers.get('Content-Length', 0))
-            limit = 30*1024*1024 if self.path in {'/api/brief/save', '/api/projects/create'} else 20000
+            limit = 60*1024*1024 if self.path in {'/api/brief/save', '/api/projects/create'} else 20000
             if not 0 < length <= limit:
                 raise ValueError('Invalid request size.')
             body = json.loads(self.rfile.read(length))

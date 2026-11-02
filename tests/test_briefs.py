@@ -9,6 +9,33 @@ PNG='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1k
 PID='aabbccddeeff0011'
 
 class BriefTests(unittest.TestCase):
+    def test_pdf_core_reference_is_owner_protected_and_preserved(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store=BriefStore(directory);token=store.unlock('synthetic-pdf-pass',setup=True,confirm='synthetic-pdf-pass')
+            pdf=b'%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n'
+            body={'revision':0,'fields':{'look_feel':'Explicit user style'},'documents':[{'name':'design.pdf','caption':'Core game design','section':'all','data':base64.b64encode(pdf).decode()}]}
+            with self.assertRaises(OwnerRequired):store.save(PID,body,None)
+            first=store.save(PID,body,token)
+            ref=first['documents'][0]
+            self.assertEqual(ref['role'],'core_reference')
+            self.assertEqual(store.document(PID,ref['id']).read_bytes(),pdf)
+            self.assertIn('missing descriptions',first['reference_policy'])
+            second=store.save(PID,{'revision':1,'fields':first['fields'],'images':[]},token)
+            self.assertEqual(second['documents'][0]['id'],ref['id'])
+            self.assertEqual(second['fields']['look_feel'],'Explicit user style')
+            store.save(PID,{'revision':2,'fields':second['fields'],'documents':[]},token)
+            self.assertTrue(store.document(PID,ref['id']).exists())
+            history=json.loads((Path(directory)/PID/'history/2.json').read_text())
+            self.assertEqual(history['documents'][0]['id'],ref['id'])
+            with self.assertRaises(ValueError):store.document(PID,'../../owner.json')
+
+    def test_invalid_pdf_does_not_change_saved_brief(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store=BriefStore(directory);token=store.unlock('synthetic-pdf-pass',setup=True,confirm='synthetic-pdf-pass')
+            for bad in [b'<html>not a pdf</html>',b'%PDF-1.4\ntruncated']:
+                with self.assertRaises(ValueError):store.save(PID,{'revision':0,'documents':[{'name':'fake.pdf','data':base64.b64encode(bad).decode()}]},token)
+                self.assertEqual(store.read(PID)['revision'],0)
+
     def test_only_owner_can_save_and_password_is_not_stored(self):
         with tempfile.TemporaryDirectory() as directory:
             store=BriefStore(directory)

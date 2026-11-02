@@ -11,6 +11,7 @@ import time
 
 FIELDS = {'vision':'Game description', 'look_feel':'Look and feel', 'layout':'World and level layout', 'characters':'Characters', 'mechanics':'Game mechanics', 'audio':'Audio and music', 'constraints':'Must-haves and things to avoid', 'notes':'Additional direction'}
 IMAGE_TYPES = {'png':'image/png','jpg':'image/jpeg','webp':'image/webp'}
+REFERENCE_POLICY = 'Explicit written brief sections take priority. Consult core-reference PDFs to fill missing descriptions. If references conflict or do not resolve a gap, ask the user; do not invent or overwrite their brief.'
 
 class OwnerRequired(PermissionError): pass
 class RevisionConflict(ValueError): pass
@@ -55,13 +56,22 @@ class BriefStore:
 
     def read(self,pid):
         path=self.folder(pid)/'brief.json'
-        return json.loads(path.read_text(encoding='utf-8')) if path.exists() else {'schema_version':1,'owner':'user','assistant_access':'read-only','project_id':pid,'revision':0,'fields':{k:'' for k in FIELDS},'images':[],'updated_at':None}
+        doc=json.loads(path.read_text(encoding='utf-8')) if path.exists() else {'schema_version':2,'owner':'user','assistant_access':'read-only','project_id':pid,'revision':0,'fields':{k:'' for k in FIELDS},'images':[],'updated_at':None}
+        doc.setdefault('documents',[])
+        doc['reference_policy']=REFERENCE_POLICY
+        return doc
 
     def image(self,pid,image_id):
         if not re.fullmatch(r'[a-f0-9]{16}\.(png|jpg|webp)',image_id or ''): raise ValueError('Invalid reference image identifier.')
         path=self.folder(pid)/'images'/image_id
         if not path.is_file(): raise FileNotFoundError('Reference image not found.')
         return path,IMAGE_TYPES[path.suffix[1:]]
+
+    def document(self,pid,document_id):
+        if not re.fullmatch(r'[a-f0-9]{16}\.pdf',document_id or ''): raise ValueError('Invalid PDF identifier.')
+        path=self.folder(pid)/'documents'/document_id
+        if not path.is_file(): raise FileNotFoundError('Reference PDF not found.')
+        return path
 
     def save(self,pid,body,token):
         self.authorize(token)
@@ -94,13 +104,37 @@ class BriefStore:
                 image_id=ref.get('id')
                 self.image(pid,image_id)
             images.append({'id':image_id,'name':name,'caption':caption,'section':section,'url':f'/api/brief-image/{pid}/{image_id}'})
+        docs=body.get('documents',old.get('documents',[]))
+        if not isinstance(docs,list) or len(docs)>12: raise ValueError('Use up to 12 core-reference PDFs.')
+        documents=[];pending_documents=[]
+        for ref in docs:
+            if not isinstance(ref,dict): raise ValueError('Invalid reference PDF entry.')
+            section=ref.get('section','all');name=ref.get('name','Reference.pdf');caption=ref.get('caption','')
+            if section not in {'all',*FIELDS}: raise ValueError('Choose a valid PDF section.')
+            if not isinstance(name,str) or len(name)>200 or not isinstance(caption,str) or len(caption)>1000: raise ValueError('PDF name or caption is too long.')
+            if ref.get('data'):
+                try: raw=base64.b64decode(ref['data'],validate=True)
+                except Exception as e: raise ValueError('Invalid PDF encoding.') from e
+                total+=len(raw)
+                if len(raw)>20*1024*1024 or total>40*1024*1024: raise ValueError('PDFs must be under 20 MB each; new images and PDFs must total under 40 MB per save.')
+                if not raw.startswith(b'%PDF-') or b'%%EOF' not in raw[-2048:]: raise ValueError('Upload a complete PDF file, not a renamed or truncated file.')
+                document_id=secrets.token_hex(8)+'.pdf'
+                pending_documents.append((document_id,raw))
+                digest=hashlib.sha256(raw).hexdigest()
+            else:
+                document_id=ref.get('id');path=self.document(pid,document_id)
+                digest=hashlib.sha256(path.read_bytes()).hexdigest()
+            documents.append({'id':document_id,'name':name,'caption':caption,'section':section,'role':'core_reference','sha256':digest,'url':f'/api/brief-pdf/{pid}/{document_id}'})
         folder=self.folder(pid);folder.mkdir(parents=True,exist_ok=True)
         (folder/'images').mkdir(exist_ok=True)
         for image_id,raw in pending:
             with (folder/'images'/image_id).open('xb') as f:f.write(raw)
+        if pending_documents:(folder/'documents').mkdir(exist_ok=True)
+        for document_id,raw in pending_documents:
+            with (folder/'documents'/document_id).open('xb') as f:f.write(raw)
         if old['revision']:
             (folder/'history').mkdir(exist_ok=True)
             with (folder/'history'/f'{old["revision"]}.json').open('x',encoding='utf-8') as f:json.dump(old,f,ensure_ascii=False,indent=2)
-        doc={'schema_version':1,'owner':'user','assistant_access':'read-only','project_id':pid,'revision':old['revision']+1,'fields':{k:fields.get(k,'') for k in FIELDS},'images':images,'updated_at':datetime.datetime.now(datetime.timezone.utc).isoformat()}
+        doc={'schema_version':2,'owner':'user','assistant_access':'read-only','reference_policy':REFERENCE_POLICY,'project_id':pid,'revision':old['revision']+1,'fields':{k:fields.get(k,'') for k in FIELDS},'images':images,'documents':documents,'updated_at':datetime.datetime.now(datetime.timezone.utc).isoformat()}
         temp=folder/'brief.tmp';temp.write_text(json.dumps(doc,ensure_ascii=False,indent=2),encoding='utf-8');temp.replace(folder/'brief.json')
         return doc
