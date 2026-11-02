@@ -80,7 +80,7 @@ class BriefStore:
         fields=body.get('fields',{})
         if not isinstance(fields,dict) or set(fields)-set(FIELDS): raise ValueError('Unknown brief section.')
         if any(not isinstance(v,str) or len(v)>20000 for v in fields.values()): raise ValueError('Each section supports up to 20,000 characters.')
-        refs=body.get('images',[])
+        refs=body.get('images',old.get('images',[]))
         if not isinstance(refs,list) or len(refs)>24: raise ValueError('Use up to 24 reference images.')
         images=[];pending=[];total=0
         for ref in refs:
@@ -89,6 +89,11 @@ class BriefStore:
             if section not in FIELDS: raise ValueError('Choose a valid image section.')
             caption=ref.get('caption','');name=ref.get('name','Reference')
             if not isinstance(caption,str) or len(caption)>1000 or not isinstance(name,str) or len(name)>200: raise ValueError('Reference caption or name is too long.')
+            role=ref.get('role','section_reference')
+            if role not in {'section_reference','master_reference'}: raise ValueError('Invalid image role.')
+            tags=ref.get('tags',[])
+            if not isinstance(tags,list) or len(tags)>12 or any(not isinstance(tag,str) or not tag.strip() or len(tag)>60 for tag in tags): raise ValueError('Use up to 12 image tags, each 1–60 characters.')
+            tags=list(dict.fromkeys(tag.strip() for tag in tags))
             if ref.get('data'):
                 try: raw=base64.b64decode(ref['data'],validate=True)
                 except Exception as e: raise ValueError('Invalid reference image encoding.') from e
@@ -103,7 +108,7 @@ class BriefStore:
             else:
                 image_id=ref.get('id')
                 self.image(pid,image_id)
-            images.append({'id':image_id,'name':name,'caption':caption,'section':section,'url':f'/api/brief-image/{pid}/{image_id}'})
+            images.append({'id':image_id,'name':name,'caption':caption,'section':section,'role':role,'tags':tags,'url':f'/api/brief-image/{pid}/{image_id}'})
         docs=body.get('documents',old.get('documents',[]))
         if not isinstance(docs,list) or len(docs)>12: raise ValueError('Use up to 12 core-reference PDFs.')
         documents=[];pending_documents=[]

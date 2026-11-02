@@ -29,6 +29,22 @@ class BriefTests(unittest.TestCase):
             self.assertEqual(history['documents'][0]['id'],ref['id'])
             with self.assertRaises(ValueError):store.document(PID,'../../owner.json')
 
+    def test_master_storyboard_tags_order_and_compatibility(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store=BriefStore(directory);token=store.unlock('synthetic-test-pass',setup=True,confirm='synthetic-test-pass')
+            refs=[{'name':name,'data':PNG,'role':'master_reference','tags':['Design style','Character design style']} for name in ['Frame one','Frame two']]
+            with self.assertRaises(OwnerRequired):store.save(PID,{'revision':0,'images':refs},None)
+            first=store.save(PID,{'revision':0,'images':refs},token)
+            self.assertEqual(first['images'][0]['role'],'master_reference')
+            self.assertEqual(first['images'][0]['tags'],refs[0]['tags'])
+            second=store.save(PID,{'revision':1,'images':list(reversed(first['images']))},token)
+            self.assertEqual([r['name'] for r in second['images']],['Frame two','Frame one'])
+            third=store.save(PID,{'revision':2,'fields':second['fields']},token)
+            self.assertEqual(third['images'],second['images'])
+            for bad in ['not-a-list',['x'*61],['tag']*13]:
+                with self.assertRaises(ValueError):store.save(PID,{'revision':3,'images':[{**third['images'][0],'tags':bad}]},token)
+            self.assertEqual(store.read(PID)['revision'],3)
+
     def test_invalid_pdf_does_not_change_saved_brief(self):
         with tempfile.TemporaryDirectory() as directory:
             store=BriefStore(directory);token=store.unlock('synthetic-pdf-pass',setup=True,confirm='synthetic-pdf-pass')

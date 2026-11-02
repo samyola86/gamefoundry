@@ -197,3 +197,7 @@ The original local pipeline passed Blender 5.2.3, Unreal 5.8.4, MSVC 14.44, SDK 
 The portable packaging is checked separately using a clean configuration and independent test directory on that machine. A complete fresh-Windows installation has **not** been validated in a clean VM. CI tests source/configuration behavior; it does not include Unreal, a GPU or Qwen and must not be interpreted as a full integration pass.
 
 Installer references: [Microsoft WinGet install](https://learn.microsoft.com/en-us/windows/package-manager/winget/install), [Microsoft Build Tools component IDs](https://learn.microsoft.com/en-us/visualstudio/install/workload-component-id-vs-build-tools), [Epic UE compiler setup](https://dev.epicgames.com/documentation/en-us/unreal-engine/setting-up-visual-studio-development-environment-for-cplusplus-projects-in-unreal-engine).
+
+### Master reference storyboard
+
+The creative brief includes a master reference storyboard for game-wide visual direction. Unlock brief editing to upload PNG/JPEG/WebP images, add captions and comma-separated tags, or choose Reference design, Design style and Character design style. Move frames earlier/later to set their order. Save the brief to keep changes. Storyboard and section references share the 24-image limit (8 MB each; 20 MB new images per save). Images, tags and order remain private user-owned brief content; assistants consult them without editing. Written brief descriptions take priority.

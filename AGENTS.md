@@ -13,3 +13,5 @@
 - Templates target Unreal 5.8 and Blender 5.2.3. Version changes need explicit compatibility checks and updated documentation.
 - Check changes with `python -m unittest discover -s tests -v` and Python compilation. Use the real pipeline tests when behavior depends on Blender/Unreal/Ollama. Do not claim a full integration pass from CI, discovery or mocked tests.
 - Preserve evidence from failed runs. Connections turn green only after their corresponding checks pass, and changing settings invalidates stale claims.
+
+- Master reference storyboard images have `role: master_reference`, ordered in the `images` list, with user tags and captions. Consult them for visual, reference-design and character-style direction. Preserve the original files, tags and ordering; explicit written brief sections take priority and conflicts require clarification.
