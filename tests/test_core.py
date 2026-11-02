@@ -8,6 +8,21 @@ from unittest.mock import patch
 import config
 
 class CoreTests(unittest.TestCase):
+    def test_android_project_targets_android_and_persists_selection(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.dict(os.environ,{'GAMEFOUNDRY_HOME':str(Path(directory)/'app')}):
+                spec=importlib.util.spec_from_file_location('android_server',Path(__file__).resolve().parents[1]/'server.py')
+                server=importlib.util.module_from_spec(spec);spec.loader.exec_module(server)
+                with patch.object(server,'ensure_blend'):
+                    item=server.create_project({'name':'AndroidProbe','folder':directory,'target':'Android'})
+                descriptor=json.loads(Path(item['uproject']).read_text())
+                manifest=json.loads((Path(item['folder'])/'game.json').read_text())
+                self.assertEqual(descriptor['TargetPlatforms'],['Android'])
+                self.assertEqual(manifest['target'],'Android')
+                self.assertEqual(server.project(item['id'])['target'],'Android')
+                with self.assertRaises(ValueError):server.create_project({'name':'BadTarget','folder':directory,'target':'Unknown'})
+                self.assertFalse((Path(directory)/'BadTarget').exists())
+
     def test_discovery_does_not_invent_missing_tools(self):
         with tempfile.TemporaryDirectory() as directory:
             with patch.dict(os.environ,{'ProgramFiles':directory,'LOCALAPPDATA':directory}):

@@ -98,6 +98,8 @@ The full check takes several minutes and writes sizable build artifacts. It may 
 
 ## Reuse with different games
 
+The new-game dialog offers **Windows** and **Android**. Choosing Android records the selection in `game.json` and the dashboard library, and sets `TargetPlatforms: ["Android"]` in the new Unreal project descriptor. This selects the project's intended platform; it does not install the Android SDK/NDK, set up signing or produce an APK/AAB. Configure the Android tools required by your Unreal version before packaging. Existing full-pipeline checks remain **Windows toolchain tests**, including when associated with an Android game; they do not certify Android builds.
+
 - **New game:** choose its name and parent folder. Creates a new directory with a blank Unreal project, Blender file, VS Code workspace, `game.json`, Assets, Builds and Notes. Existing folders are never overwritten.
 - **Register existing project:** provide its `.uproject` path. Stores a reference without editing project files.
 - **Blender:** opens `Assets/<GameName>.blend` for dashboard-created games, creating a missing starter file without overwriting existing work. For read-only registered projects, opens Blender without writing a file.

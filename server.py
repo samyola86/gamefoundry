@@ -105,6 +105,9 @@ def chat(body):
         CHAT_BUSY.release()
 
 def create_project(body):
+    target_platform = body.get('target', 'Windows')
+    if target_platform not in {'Windows', 'Android'}:
+        raise ValueError('Choose Windows or Android as the target platform.')
     name = str(body.get('name', '')).strip()
     if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{1,39}', name):
         raise ValueError('Use 2–40 letters, numbers or underscores; start with a letter.')
@@ -121,9 +124,11 @@ def create_project(body):
             (dest / folder).mkdir()
         (ue / 'Content').mkdir()
         descriptor = {'FileVersion': 3, 'EngineAssociation': '5.8', 'Category': 'Games', 'Description': body.get('description', ''), 'Plugins': [{'Name': 'PythonScriptPlugin', 'Enabled': True}, {'Name': 'EditorScriptingUtilities', 'Enabled': True}]}
+        if target_platform == 'Android':
+            descriptor['TargetPlatforms'] = ['Android']
         up = ue / f'{name}.uproject'
         up.write_text(json.dumps(descriptor, indent=2))
-        item = {'id': secrets.token_hex(8), 'name': name, 'folder': str(dest), 'uproject': str(up), 'managed': True, 'created': now(), 'target': body.get('target', 'Windows')}
+        item = {'id': secrets.token_hex(8), 'name': name, 'folder': str(dest), 'uproject': str(up), 'managed': True, 'created': now(), 'target': target_platform}
         ensure_blend(item)
         (dest / 'game.json').write_text(json.dumps(item, indent=2))
         (dest / f'{name}.code-workspace').write_text(json.dumps({'folders': [{'path': '.'}], 'settings': {'python.defaultInterpreterPath': settings()['python']}}, indent=2))
